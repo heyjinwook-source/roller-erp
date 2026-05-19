@@ -9,17 +9,34 @@ export default function PriceDbPage() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
+  const [partNames, setPartNames] = useState([])       // 품목명 드롭다운 목록
+  const [searchName, setSearchName] = useState('')     // 품목명 검색
+  const [searchSpec, setSearchSpec] = useState('')     // 규격 검색
+  const [showDropdown, setShowDropdown] = useState(false)
   const [form, setForm] = useState({ part_name: '', spec: '', unit_price: '', unit: '개', notes: '' })
   const [editId, setEditId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState(null)
   const fileRef = useRef(null)
-  const searchTimer = useRef(null)
+  const nameTimer = useRef(null)
+  const specTimer = useRef(null)
+  const dropdownRef = useRef(null)
   const supabase = createClient()
 
-  const fetchItems = useCallback(async (keyword, pageNum) => {
+  // 고유 품목명 목록 로드
+  const loadPartNames = useCallback(async () => {
+    const { data } = await supabase
+      .from('price_db')
+      .select('part_name')
+      .order('part_name')
+    if (data) {
+      const unique = [...new Set(data.map(d => d.part_name))].filter(Boolean)
+      setPartNames(unique)
+    }
+  }, [])
+
+  const fetchItems = useCallback(async (name, spec, pageNum) => {
     setLoading(true)
     const from = (pageNum - 1) * PAGE_SIZE
     const to = from + PAGE_SIZE - 1
@@ -28,23 +45,63 @@ export default function PriceDbPage() {
       .select('*', { count: 'exact' })
       .order('part_name').order('spec')
       .range(from, to)
-    if (keyword) query = query.or(`part_name.ilike.%${keyword}%,spec.ilike.%${keyword}%`)
+    if (name) query = query.ilike('part_name', `%${name}%`)
+    if (spec) query = query.ilike('spec', `%${spec}%`)
     const { data, count } = await query
     setItems(data || [])
     setTotal(count || 0)
     setLoading(false)
   }, [])
 
-  useEffect(() => { fetchItems('', 1) }, [fetchItems])
-
   useEffect(() => {
-    clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(() => { setPage(1); fetchItems(search, 1) }, 400)
-    return () => clearTimeout(searchTimer.current)
-  }, [search, fetchItems])
+    fetchItems('', '', 1)
+    loadPartNames()
+  }, [fetchItems, loadPartNames])
 
-  const goPage = (p) => { setPage(p); fetchItems(search, p) }
+  // 품목명 검색 디바운스
+  useEffect(() => {
+    clearTimeout(nameTimer.current)
+    nameTimer.current = setTimeout(() => { setPage(1); fetchItems(searchName, searchSpec, 1) }, 350)
+    return () => clearTimeout(nameTimer.current)
+  }, [searchName])
+
+  // 규격 검색 디바운스
+  useEffect(() => {
+    clearTimeout(specTimer.current)
+    specTimer.current = setTimeout(() => { setPage(1); fetchItems(searchName, searchSpec, 1) }, 350)
+    return () => clearTimeout(specTimer.current)
+  }, [searchSpec])
+
+  // 드롭다운 외부 클릭 닫기
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setShowDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  const goPage = (p) => { setPage(p); fetchItems(searchName, searchSpec, p) }
   const totalPages = Math.ceil(total / PAGE_SIZE)
+
+  const resetSearch = () => {
+    setSearchName(''); setSearchSpec(''); setPage(1)
+    fetchItems('', '', 1)
+  }
+
+  // 드롭다운 필터링
+  const filteredNames = partNames.filter(n =>
+    !searchName || n.toLowerCase().includes(searchName.toLowerCase())
+  ).slice(0, 50)
+
+  const selectName = (name) => {
+    setSearchName(name)
+    setShowDropdown(false)
+    setPage(1)
+    fetchItems(name, searchSpec, 1)
+  }
 
   const resetForm = () => {
     setForm({ part_name: '', spec: '', unit_price: '', unit: '개', notes: '' })
@@ -66,16 +123,15 @@ export default function PriceDbPage() {
     } else {
       await supabase.from('price_db').insert(payload)
     }
-    resetForm(); fetchItems(search, page); setSaving(false)
+    resetForm(); fetchItems(searchName, searchSpec, page); loadPartNames(); setSaving(false)
   }
 
   const handleDelete = async (id) => {
     if (!confirm('삭제하시겠습니까?')) return
     await supabase.from('price_db').delete().eq('id', id)
-    fetchItems(search, page)
+    fetchItems(searchName, searchSpec, page); loadPartNames()
   }
 
-  // 전체 데이터 페이지별 조회
   const fetchAll = async () => {
     const all = []
     let from = 0
@@ -90,7 +146,6 @@ export default function PriceDbPage() {
     return all
   }
 
-  // CSV 다운로드 (xlsx 불필요)
   const handleDownload = async () => {
     const all = await fetchAll()
     const header = ['품목명', '규격', '단가(원)', '단위', '비고']
@@ -107,7 +162,6 @@ export default function PriceDbPage() {
     URL.revokeObjectURL(url)
   }
 
-  // CSV 업로드
   const handleUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -115,24 +169,18 @@ export default function PriceDbPage() {
     try {
       const text = await file.text()
       const lines = text.split('\n').filter(l => l.trim())
-
-      // CSV 파싱 (따옴표 처리)
       const parseRow = (line) => {
         const result = []; let cur = '', inQ = false
         for (const ch of line) {
-          if (ch === '"') { inQ = !inQ }
+          if (ch === '"') inQ = !inQ
           else if (ch === ',' && !inQ) { result.push(cur.trim()); cur = '' }
-          else { cur += ch }
+          else cur += ch
         }
         result.push(cur.trim())
         return result
       }
-
       const rows = lines.map(parseRow)
-      if (rows.length < 2) {
-        setUploadResult({ type: 'error', msg: '데이터가 없습니다.' }); setUploading(false); return
-      }
-
+      if (rows.length < 2) { setUploadResult({ type: 'error', msg: '데이터가 없습니다.' }); setUploading(false); return }
       const header = rows[0].map(h => h.replace(/"/g,'').trim())
       const col = {
         name:  header.findIndex(h => h.includes('품목')),
@@ -141,17 +189,11 @@ export default function PriceDbPage() {
         unit:  header.findIndex(h => h.includes('단위')),
         notes: header.findIndex(h => h.includes('비고')),
       }
-
-      if (col.name < 0 || col.price < 0) {
-        setUploadResult({ type: 'error', msg: '"품목명"과 "단가" 컬럼이 필요합니다.' }); setUploading(false); return
-      }
-
+      if (col.name < 0 || col.price < 0) { setUploadResult({ type: 'error', msg: '"품목명"과 "단가" 컬럼이 필요합니다.' }); setUploading(false); return }
       const { data: existing } = await supabase.from('price_db').select('id, part_name, spec')
       const existMap = {}
       ;(existing || []).forEach(r => { existMap[`${r.part_name}||${r.spec || ''}`] = r.id })
-
       const toInsert = [], toUpdate = []; let skipCount = 0
-
       for (let ri = 1; ri < rows.length; ri++) {
         const row = rows[ri]
         const part_name = (row[col.name] || '').replace(/"/g,'').trim()
@@ -163,20 +205,17 @@ export default function PriceDbPage() {
         const notes = col.notes >= 0 ? (row[col.notes] || '').replace(/"/g,'').trim() : ''
         const payload = { part_name, spec, unit_price, unit, notes, updated_at: new Date().toISOString() }
         const mapKey = `${part_name}||${spec}`
-        if (existMap[mapKey]) { toUpdate.push({ id: existMap[mapKey], ...payload }) }
-        else { toInsert.push(payload) }
+        if (existMap[mapKey]) toUpdate.push({ id: existMap[mapKey], ...payload })
+        else toInsert.push(payload)
       }
-
       let insertedCount = 0, updatedCount = 0
       for (let i = 0; i < toInsert.length; i += 500) {
         const { error } = await supabase.from('price_db').insert(toInsert.slice(i, i + 500))
         if (!error) insertedCount += Math.min(500, toInsert.length - i)
       }
-      const results = await Promise.all(
-        toUpdate.map(({ id, ...p }) => supabase.from('price_db').update(p).eq('id', id))
-      )
+      const results = await Promise.all(toUpdate.map(({ id, ...p }) => supabase.from('price_db').update(p).eq('id', id)))
       updatedCount = results.filter(r => !r.error).length
-      setPage(1); fetchItems(search, 1)
+      setPage(1); fetchItems(searchName, searchSpec, 1); loadPartNames()
       setUploadResult({ type: 'success', msg: `완료! 신규 ${insertedCount}건 · 업데이트 ${updatedCount}건 · 건너뜀 ${skipCount}건` })
     } catch (err) {
       setUploadResult({ type: 'error', msg: `오류: ${err.message}` })
@@ -192,8 +231,11 @@ export default function PriceDbPage() {
     return range
   }
 
+  const hasFilter = searchName || searchSpec
+
   return (
     <div className="p-6 max-w-5xl">
+      {/* 헤더 */}
       <div className="mb-5 flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-lg font-semibold text-gray-900">단가 DB</h1>
@@ -221,12 +263,7 @@ export default function PriceDbPage() {
         </div>
       )}
 
-      <div className="mb-5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-600">
-        <strong className="text-blue-700">사용법:</strong>&nbsp;
-        CSV 다운로드 → 엑셀에서 수정 → CSV로 저장 → CSV 업로드&nbsp;
-        <span className="text-blue-400">| 품목명+규격 동일 → 업데이트 / 새 항목 → 자동 추가</span>
-      </div>
-
+      {/* 개별 등록 */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
         <h2 className="text-sm font-semibold text-gray-700 mb-3">{editId ? '단가 수정' : '개별 등록'}</h2>
         <div className="grid grid-cols-5 gap-3">
@@ -262,13 +299,82 @@ export default function PriceDbPage() {
         </div>
       </div>
 
+      {/* 목록 */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-4 flex-wrap">
-          <h2 className="text-sm font-semibold text-gray-800 shrink-0">전체 {total.toLocaleString()}건</h2>
-          <input value={search} onChange={e => setSearch(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-gray-400"
-            placeholder="품목명 또는 규격 검색" />
+        {/* 검색 바 */}
+        <div className="px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-3 flex-wrap">
+
+            {/* 품목명 드롭다운+검색 */}
+            <div className="relative" ref={dropdownRef}>
+              <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden focus-within:border-gray-400 bg-white">
+                <span className="px-3 text-xs text-gray-400 whitespace-nowrap border-r border-gray-200 py-2">품목명</span>
+                <input
+                  value={searchName}
+                  onChange={e => { setSearchName(e.target.value); setShowDropdown(true) }}
+                  onFocus={() => setShowDropdown(true)}
+                  placeholder="검색 또는 선택"
+                  className="px-3 py-2 text-sm w-44 focus:outline-none bg-transparent" />
+                {searchName && (
+                  <button onClick={() => { setSearchName(''); setShowDropdown(false) }}
+                    className="px-2 text-gray-300 hover:text-gray-500 text-lg">×</button>
+                )}
+                <button onClick={() => setShowDropdown(v => !v)}
+                  className="px-2 py-2 text-gray-400 hover:text-gray-600 border-l border-gray-200 text-xs">
+                  {showDropdown ? '▲' : '▼'}
+                </button>
+              </div>
+
+              {/* 드롭다운 목록 */}
+              {showDropdown && filteredNames.length > 0 && (
+                <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                  <div
+                    className="px-3 py-2 text-xs text-gray-400 hover:bg-gray-50 cursor-pointer border-b border-gray-100"
+                    onClick={() => { setSearchName(''); setShowDropdown(false); setPage(1); fetchItems('', searchSpec, 1) }}>
+                    전체 보기
+                  </div>
+                  {filteredNames.map(name => (
+                    <div key={name}
+                      onClick={() => selectName(name)}
+                      className={`px-3 py-2 text-sm cursor-pointer hover:bg-gray-50 ${searchName === name ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'}`}>
+                      {name}
+                    </div>
+                  ))}
+                  {filteredNames.length === 50 && (
+                    <div className="px-3 py-2 text-xs text-gray-400 border-t border-gray-100">더 입력하면 좁혀집니다</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 규격 검색 */}
+            <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden focus-within:border-gray-400 bg-white">
+              <span className="px-3 text-xs text-gray-400 whitespace-nowrap border-r border-gray-200 py-2">규격</span>
+              <input
+                value={searchSpec}
+                onChange={e => setSearchSpec(e.target.value)}
+                placeholder="규격 검색"
+                className="px-3 py-2 text-sm w-40 focus:outline-none bg-transparent" />
+              {searchSpec && (
+                <button onClick={() => setSearchSpec('')}
+                  className="px-2 text-gray-300 hover:text-gray-500 text-lg">×</button>
+              )}
+            </div>
+
+            {/* 초기화 + 결과 */}
+            {hasFilter && (
+              <button onClick={resetSearch}
+                className="px-3 py-2 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">
+                초기화
+              </button>
+            )}
+            <span className="text-xs text-gray-400 ml-auto">
+              {loading ? '검색 중...' : `${total.toLocaleString()}건`}
+            </span>
+          </div>
         </div>
+
+        {/* 테이블 */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -276,30 +382,30 @@ export default function PriceDbPage() {
                 <th className="px-5 py-2.5 text-left font-medium">품목명</th>
                 <th className="px-4 py-2.5 text-left font-medium">규격</th>
                 <th className="px-4 py-2.5 text-right font-medium">단가 (원)</th>
-                <th className="px-4 py-2.5 text-center font-medium">단위</th>
                 <th className="px-4 py-2.5 text-center font-medium">관리</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={5} className="py-10 text-center text-gray-300">로딩 중...</td></tr>
+                <tr><td colSpan={4} className="py-10 text-center text-gray-300">검색 중...</td></tr>
               ) : items.length ? items.map(item => (
                 <tr key={item.id} className="border-t border-gray-50 hover:bg-gray-50">
                   <td className="px-5 py-2.5 font-medium text-gray-800">{item.part_name}</td>
                   <td className="px-4 py-2.5 text-gray-500 text-xs">{item.spec}</td>
                   <td className="px-4 py-2.5 text-right font-mono">{Number(item.unit_price).toLocaleString()}</td>
-                  <td className="px-4 py-2.5 text-center text-gray-400 text-xs">{item.unit}</td>
                   <td className="px-4 py-2.5 text-center">
                     <button onClick={() => handleEdit(item)} className="text-xs text-blue-600 hover:underline mr-3">수정</button>
                     <button onClick={() => handleDelete(item.id)} className="text-xs text-red-500 hover:underline">삭제</button>
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan={5} className="py-10 text-center text-gray-300">검색 결과가 없습니다</td></tr>
+                <tr><td colSpan={4} className="py-10 text-center text-gray-300">검색 결과가 없습니다</td></tr>
               )}
             </tbody>
           </table>
         </div>
+
+        {/* 페이지네이션 */}
         {totalPages > 1 && (
           <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-4 flex-wrap">
             <span className="text-xs text-gray-400">
