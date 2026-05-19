@@ -1,10 +1,11 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase'
 
 export default function PriceDbPage() {
   const [items, setItems] = useState([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [form, setForm] = useState({ part_name: '', spec: '', unit_price: '', unit: '개', notes: '' })
@@ -13,20 +14,30 @@ export default function PriceDbPage() {
   const [uploading, setUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState(null)
   const fileRef = useRef(null)
+  const searchTimer = useRef(null)
   const supabase = createClient()
 
-  const load = async () => {
+  // 서버 검색 (1000건 제한 해결)
+  const fetchItems = useCallback(async (keyword = '') => {
     setLoading(true)
-    const { data } = await supabase.from('price_db').select('*').order('part_name').order('spec')
+    let query = supabase.from('price_db').select('*', { count: 'exact' }).order('part_name').order('spec').limit(500)
+    if (keyword) {
+      query = query.or(`part_name.ilike.%${keyword}%,spec.ilike.%${keyword}%`)
+    }
+    const { data, count } = await query
     setItems(data || [])
+    setTotal(count || 0)
     setLoading(false)
-  }
+  }, [])
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { fetchItems() }, [])
 
-  const filtered = items.filter(i =>
-    !search || i.part_name?.includes(search) || i.spec?.includes(search)
-  )
+  // 검색어 디바운스 (0.4초 후 서버 검색)
+  useEffect(() => {
+    clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => fetchItems(search), 400)
+    return () => clearTimeout(searchTimer.current)
+  }, [search])
 
   const resetForm = () => {
     setForm({ part_name: '', spec: '', unit_price: '', unit: '개', notes: '' })
@@ -48,21 +59,39 @@ export default function PriceDbPage() {
     } else {
       await supabase.from('price_db').insert(payload)
     }
-    resetForm(); await load(); setSaving(false)
+    resetForm()
+    fetchItems(search)
+    setSaving(false)
   }
 
   const handleDelete = async (id) => {
     if (!confirm('삭제하시겠습니까?')) return
     await supabase.from('price_db').delete().eq('id', id)
-    await load()
+    fetchItems(search)
   }
 
-  // Excel 다운로드
-  const handleDownload = () => {
+  // 전체 데이터 다운로드용
+  const fetchAll = async () => {
+    const all = []
+    let from = 0
+    const size = 1000
+    while (true) {
+      const { data } = await supabase.from('price_db').select('*').order('part_name').order('spec').range(from, from + size - 1)
+      if (!data || data.length === 0) break
+      all.push(...data)
+      if (data.length < size) break
+      from += size
+    }
+    return all
+  }
+
+  // Excel 다운로드 (전체)
+  const handleDownload = async () => {
+    const all = await fetchAll()
     const wb = XLSX.utils.book_new()
     const wsData = [
       ['품목명', '규격', '단가(원)', '단위', '비고'],
-      ...items.map(i => [i.part_name, i.spec || '', i.unit_price, i.unit || '개', i.notes || ''])
+      ...all.map(i => [i.part_name, i.spec || '', i.unit_price, i.unit || '개', i.notes || ''])
     ]
     const ws = XLSX.utils.aoa_to_sheet(wsData)
     ws['!cols'] = [{ wch: 25 }, { wch: 35 }, { wch: 12 }, { wch: 8 }, { wch: 20 }]
@@ -78,7 +107,7 @@ export default function PriceDbPage() {
       ['단위', '개/mm/kg 등', '선택', '개'],
       ['비고', '추가 설명', '선택', ''],
       [''],
-      ['※ 업로드 시 품목명+규격 동일하면 단가 업데이트, 없으면 신규 추가'],
+      ['※ 품목명+규격 동일 → 단가 업데이트 / 새 항목 → 자동 추가'],
     ])
     wsGuide['!cols'] = [{ wch: 12 }, { wch: 25 }, { wch: 10 }, { wch: 20 }]
     XLSX.utils.book_append_sheet(wb, wsGuide, '업로드안내')
@@ -148,24 +177,17 @@ export default function PriceDbPage() {
       }
 
       let insertedCount = 0, updatedCount = 0
-
       for (let i = 0; i < toInsert.length; i += 500) {
         const { error } = await supabase.from('price_db').insert(toInsert.slice(i, i + 500))
         if (!error) insertedCount += Math.min(500, toInsert.length - i)
       }
-
       const updateResults = await Promise.all(
-        toUpdate.map(({ id, ...payload }) =>
-          supabase.from('price_db').update(payload).eq('id', id)
-        )
+        toUpdate.map(({ id, ...payload }) => supabase.from('price_db').update(payload).eq('id', id))
       )
       updatedCount = updateResults.filter(r => !r.error).length
 
-      await load()
-      setUploadResult({
-        type: 'success',
-        msg: `완료! 신규 추가 ${insertedCount}건 · 업데이트 ${updatedCount}건 · 건너뜀 ${skipCount}건`
-      })
+      fetchItems(search)
+      setUploadResult({ type: 'success', msg: `완료! 신규 추가 ${insertedCount}건 · 업데이트 ${updatedCount}건 · 건너뜀 ${skipCount}건` })
     } catch (err) {
       setUploadResult({ type: 'error', msg: `오류: ${err.message}` })
     } finally {
@@ -196,18 +218,15 @@ export default function PriceDbPage() {
 
       {uploadResult && (
         <div className={`mb-4 px-4 py-3 rounded-lg text-sm flex items-center justify-between ${
-          uploadResult.type === 'success'
-            ? 'bg-green-50 text-green-700 border border-green-200'
-            : 'bg-red-50 text-red-600 border border-red-200'
+          uploadResult.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'
         }`}>
           <span>{uploadResult.msg}</span>
           <button onClick={() => setUploadResult(null)} className="ml-4 text-gray-400 hover:text-gray-600">✕</button>
         </div>
       )}
 
-      <div className="mb-5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-600 leading-relaxed">
-        <strong className="text-blue-700">Excel 업로드 방법:</strong>&nbsp;
-        ① Excel 다운로드 → ② 엑셀에서 단가 수정/추가 → ③ Excel 업로드&nbsp;
+      <div className="mb-5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-600">
+        <strong className="text-blue-700">Excel 업로드:</strong> ① 다운로드 → ② 수정/추가 → ③ 업로드&nbsp;
         <span className="text-blue-400">| 품목명+규격 동일 → 업데이트 / 새 항목 → 자동 추가</span>
       </div>
 
@@ -256,11 +275,11 @@ export default function PriceDbPage() {
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-4">
           <h2 className="text-sm font-semibold text-gray-800 shrink-0">
-            {loading ? '로딩 중...' : `총 ${filtered.length.toLocaleString()}건`}
+            {loading ? '검색 중...' : `검색 결과 ${items.length.toLocaleString()}건 / 전체 ${total.toLocaleString()}건`}
           </h2>
           <input value={search} onChange={e => setSearch(e.target.value)}
             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-gray-400"
-            placeholder="품목명 또는 규격 검색" />
+            placeholder="품목명 또는 규격 검색 (실시간)" />
         </div>
         <div className="overflow-x-auto" style={{ maxHeight: '55vh', overflowY: 'auto' }}>
           <table className="w-full text-sm">
@@ -275,8 +294,8 @@ export default function PriceDbPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={5} className="py-10 text-center text-gray-300">로딩 중...</td></tr>
-              ) : filtered.length ? filtered.map(item => (
+                <tr><td colSpan={5} className="py-10 text-center text-gray-300">검색 중...</td></tr>
+              ) : items.length ? items.map(item => (
                 <tr key={item.id} className="border-t border-gray-50 hover:bg-gray-50">
                   <td className="px-5 py-2.5 font-medium text-gray-800">{item.part_name}</td>
                   <td className="px-4 py-2.5 text-gray-500 text-xs">{item.spec}</td>
@@ -288,7 +307,7 @@ export default function PriceDbPage() {
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan={5} className="py-10 text-center text-gray-300">등록된 단가가 없습니다</td></tr>
+                <tr><td colSpan={5} className="py-10 text-center text-gray-300">검색 결과가 없습니다</td></tr>
               )}
             </tbody>
           </table>
