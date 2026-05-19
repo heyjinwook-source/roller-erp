@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useState, useRef, useCallback } from 'react'
-import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase'
 
 export default function PriceDbPage() {
@@ -17,10 +16,14 @@ export default function PriceDbPage() {
   const searchTimer = useRef(null)
   const supabase = createClient()
 
-  // 서버 검색 (1000건 제한 해결)
   const fetchItems = useCallback(async (keyword = '') => {
     setLoading(true)
-    let query = supabase.from('price_db').select('*', { count: 'exact' }).order('part_name').order('spec').limit(500)
+    let query = supabase
+      .from('price_db')
+      .select('*', { count: 'exact' })
+      .order('part_name')
+      .order('spec')
+      .limit(500)
     if (keyword) {
       query = query.or(`part_name.ilike.%${keyword}%,spec.ilike.%${keyword}%`)
     }
@@ -32,7 +35,6 @@ export default function PriceDbPage() {
 
   useEffect(() => { fetchItems() }, [])
 
-  // 검색어 디바운스 (0.4초 후 서버 검색)
   useEffect(() => {
     clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(() => fetchItems(search), 400)
@@ -70,53 +72,42 @@ export default function PriceDbPage() {
     fetchItems(search)
   }
 
-  // 전체 데이터 다운로드용
   const fetchAll = async () => {
     const all = []
     let from = 0
-    const size = 1000
     while (true) {
-      const { data } = await supabase.from('price_db').select('*').order('part_name').order('spec').range(from, from + size - 1)
+      const { data } = await supabase
+        .from('price_db')
+        .select('*')
+        .order('part_name')
+        .order('spec')
+        .range(from, from + 999)
       if (!data || data.length === 0) break
       all.push(...data)
-      if (data.length < size) break
-      from += size
+      if (data.length < 1000) break
+      from += 1000
     }
     return all
   }
 
-  // Excel 다운로드 (전체)
+  // xlsx를 동적 import (빌드 오류 방지)
+  const getXLSX = () => import('xlsx')
+
   const handleDownload = async () => {
+    const { utils, writeFile } = await getXLSX()
     const all = await fetchAll()
-    const wb = XLSX.utils.book_new()
+    const wb = utils.book_new()
     const wsData = [
       ['품목명', '규격', '단가(원)', '단위', '비고'],
       ...all.map(i => [i.part_name, i.spec || '', i.unit_price, i.unit || '개', i.notes || ''])
     ]
-    const ws = XLSX.utils.aoa_to_sheet(wsData)
+    const ws = utils.aoa_to_sheet(wsData)
     ws['!cols'] = [{ wch: 25 }, { wch: 35 }, { wch: 12 }, { wch: 8 }, { wch: 20 }]
-    XLSX.utils.book_append_sheet(wb, ws, '단가DB')
-
-    const wsGuide = XLSX.utils.aoa_to_sheet([
-      ['업로드 양식 안내'],
-      [''],
-      ['컬럼명', '설명', '필수여부', '예시'],
-      ['품목명', '부품 이름', '필수', '파이프'],
-      ['규격', '규격/사양', '선택', '42.7*1.8T'],
-      ['단가(원)', '숫자만 입력', '필수', '2500'],
-      ['단위', '개/mm/kg 등', '선택', '개'],
-      ['비고', '추가 설명', '선택', ''],
-      [''],
-      ['※ 품목명+규격 동일 → 단가 업데이트 / 새 항목 → 자동 추가'],
-    ])
-    wsGuide['!cols'] = [{ wch: 12 }, { wch: 25 }, { wch: 10 }, { wch: 20 }]
-    XLSX.utils.book_append_sheet(wb, wsGuide, '업로드안내')
-
+    utils.book_append_sheet(wb, ws, '단가DB')
     const today = new Date().toISOString().slice(0, 10)
-    XLSX.writeFile(wb, `단가DB_${today}.xlsx`)
+    writeFile(wb, `단가DB_${today}.xlsx`)
   }
 
-  // Excel 업로드
   const handleUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -124,10 +115,11 @@ export default function PriceDbPage() {
     setUploadResult(null)
 
     try {
+      const { read, utils } = await getXLSX()
       const buf = await file.arrayBuffer()
-      const wb = XLSX.read(buf)
+      const wb = read(buf)
       const ws = wb.Sheets[wb.SheetNames[0]]
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+      const rows = utils.sheet_to_json(ws, { header: 1, defval: '' })
 
       if (rows.length < 2) {
         setUploadResult({ type: 'error', msg: '데이터가 없습니다.' })
@@ -187,7 +179,7 @@ export default function PriceDbPage() {
       updatedCount = updateResults.filter(r => !r.error).length
 
       fetchItems(search)
-      setUploadResult({ type: 'success', msg: `완료! 신규 추가 ${insertedCount}건 · 업데이트 ${updatedCount}건 · 건너뜀 ${skipCount}건` })
+      setUploadResult({ type: 'success', msg: `완료! 신규 ${insertedCount}건 추가 · ${updatedCount}건 업데이트 · ${skipCount}건 건너뜀` })
     } catch (err) {
       setUploadResult({ type: 'error', msg: `오류: ${err.message}` })
     } finally {
@@ -218,7 +210,9 @@ export default function PriceDbPage() {
 
       {uploadResult && (
         <div className={`mb-4 px-4 py-3 rounded-lg text-sm flex items-center justify-between ${
-          uploadResult.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'
+          uploadResult.type === 'success'
+            ? 'bg-green-50 text-green-700 border border-green-200'
+            : 'bg-red-50 text-red-600 border border-red-200'
         }`}>
           <span>{uploadResult.msg}</span>
           <button onClick={() => setUploadResult(null)} className="ml-4 text-gray-400 hover:text-gray-600">✕</button>
@@ -226,11 +220,11 @@ export default function PriceDbPage() {
       )}
 
       <div className="mb-5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-600">
-        <strong className="text-blue-700">Excel 업로드:</strong> ① 다운로드 → ② 수정/추가 → ③ 업로드&nbsp;
+        <strong className="text-blue-700">Excel 업로드:</strong>&nbsp;
+        ① 다운로드 → ② 수정/추가 → ③ 업로드&nbsp;
         <span className="text-blue-400">| 품목명+규격 동일 → 업데이트 / 새 항목 → 자동 추가</span>
       </div>
 
-      {/* 개별 입력 */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
         <h2 className="text-sm font-semibold text-gray-700 mb-3">{editId ? '단가 수정' : '개별 등록'}</h2>
         <div className="grid grid-cols-5 gap-3">
@@ -271,15 +265,14 @@ export default function PriceDbPage() {
         </div>
       </div>
 
-      {/* 목록 */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-4">
           <h2 className="text-sm font-semibold text-gray-800 shrink-0">
-            {loading ? '검색 중...' : `검색 결과 ${items.length.toLocaleString()}건 / 전체 ${total.toLocaleString()}건`}
+            {loading ? '검색 중...' : `${items.length.toLocaleString()}건 표시 / 전체 ${total.toLocaleString()}건`}
           </h2>
           <input value={search} onChange={e => setSearch(e.target.value)}
             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-gray-400"
-            placeholder="품목명 또는 규격 검색 (실시간)" />
+            placeholder="품목명 또는 규격 검색" />
         </div>
         <div className="overflow-x-auto" style={{ maxHeight: '55vh', overflowY: 'auto' }}>
           <table className="w-full text-sm">
