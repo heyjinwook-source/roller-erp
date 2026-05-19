@@ -24,16 +24,23 @@ export default function PriceDbPage() {
   const dropdownRef = useRef(null)
   const supabase = createClient()
 
-  // 고유 품목명 목록 로드
+  // 고유 품목명 목록 로드 (전체 페이지 순회)
   const loadPartNames = useCallback(async () => {
-    const { data } = await supabase
-      .from('price_db')
-      .select('part_name')
-      .order('part_name')
-    if (data) {
-      const unique = [...new Set(data.map(d => d.part_name))].filter(Boolean)
-      setPartNames(unique)
+    const all = []
+    let from = 0
+    while (true) {
+      const { data } = await supabase
+        .from('price_db')
+        .select('part_name')
+        .order('part_name')
+        .range(from, from + 999)
+      if (!data || data.length === 0) break
+      all.push(...data)
+      if (data.length < 1000) break
+      from += 1000
     }
+    const unique = [...new Set(all.map(d => d.part_name))].filter(Boolean)
+    setPartNames(unique)
   }, [])
 
   const fetchItems = useCallback(async (name, spec, pageNum) => {
@@ -91,10 +98,10 @@ export default function PriceDbPage() {
     fetchItems('', '', 1)
   }
 
-  // 드롭다운 필터링
+  // 드롭다운 필터링 (전체 표시)
   const filteredNames = partNames.filter(n =>
     !searchName || n.toLowerCase().includes(searchName.toLowerCase())
-  ).slice(0, 50)
+  )
 
   const selectName = (name) => {
     setSearchName(name)
@@ -340,9 +347,6 @@ export default function PriceDbPage() {
                       {name}
                     </div>
                   ))}
-                  {filteredNames.length === 50 && (
-                    <div className="px-3 py-2 text-xs text-gray-400 border-t border-gray-100">더 입력하면 좁혀집니다</div>
-                  )}
                 </div>
               )}
             </div>
