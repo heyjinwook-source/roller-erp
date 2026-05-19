@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState, useRef } from 'react'
+import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase'
 
 export default function PriceDbPage() {
@@ -58,34 +59,32 @@ export default function PriceDbPage() {
 
   // Excel 다운로드
   const handleDownload = () => {
-    import('https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs').then(XLSX => {
-      const wb = XLSX.utils.book_new()
-      const wsData = [
-        ['품목명', '규격', '단가(원)', '단위', '비고'],
-        ...items.map(i => [i.part_name, i.spec || '', i.unit_price, i.unit || '개', i.notes || ''])
-      ]
-      const ws = XLSX.utils.aoa_to_sheet(wsData)
-      ws['!cols'] = [{ wch: 25 }, { wch: 35 }, { wch: 12 }, { wch: 8 }, { wch: 20 }]
-      XLSX.utils.book_append_sheet(wb, ws, '단가DB')
+    const wb = XLSX.utils.book_new()
+    const wsData = [
+      ['품목명', '규격', '단가(원)', '단위', '비고'],
+      ...items.map(i => [i.part_name, i.spec || '', i.unit_price, i.unit || '개', i.notes || ''])
+    ]
+    const ws = XLSX.utils.aoa_to_sheet(wsData)
+    ws['!cols'] = [{ wch: 25 }, { wch: 35 }, { wch: 12 }, { wch: 8 }, { wch: 20 }]
+    XLSX.utils.book_append_sheet(wb, ws, '단가DB')
 
-      const wsGuide = XLSX.utils.aoa_to_sheet([
-        ['업로드 양식 안내'],
-        [''],
-        ['컬럼명', '설명', '필수여부', '예시'],
-        ['품목명', '부품 이름', '필수', '파이프'],
-        ['규격', '규격/사양', '선택', '42.7*1.8T'],
-        ['단가(원)', '숫자만 입력', '필수', '2500'],
-        ['단위', '개/mm/kg 등', '선택', '개'],
-        ['비고', '추가 설명', '선택', ''],
-        [''],
-        ['※ 업로드 시 품목명+규격 동일하면 단가 업데이트, 없으면 신규 추가'],
-      ])
-      wsGuide['!cols'] = [{ wch: 12 }, { wch: 25 }, { wch: 10 }, { wch: 20 }]
-      XLSX.utils.book_append_sheet(wb, wsGuide, '업로드안내')
+    const wsGuide = XLSX.utils.aoa_to_sheet([
+      ['업로드 양식 안내'],
+      [''],
+      ['컬럼명', '설명', '필수여부', '예시'],
+      ['품목명', '부품 이름', '필수', '파이프'],
+      ['규격', '규격/사양', '선택', '42.7*1.8T'],
+      ['단가(원)', '숫자만 입력', '필수', '2500'],
+      ['단위', '개/mm/kg 등', '선택', '개'],
+      ['비고', '추가 설명', '선택', ''],
+      [''],
+      ['※ 업로드 시 품목명+규격 동일하면 단가 업데이트, 없으면 신규 추가'],
+    ])
+    wsGuide['!cols'] = [{ wch: 12 }, { wch: 25 }, { wch: 10 }, { wch: 20 }]
+    XLSX.utils.book_append_sheet(wb, wsGuide, '업로드안내')
 
-      const today = new Date().toISOString().slice(0, 10)
-      XLSX.writeFile(wb, `단가DB_${today}.xlsx`)
-    })
+    const today = new Date().toISOString().slice(0, 10)
+    XLSX.writeFile(wb, `단가DB_${today}.xlsx`)
   }
 
   // Excel 업로드
@@ -96,7 +95,6 @@ export default function PriceDbPage() {
     setUploadResult(null)
 
     try {
-      const XLSX = await import('https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs')
       const buf = await file.arrayBuffer()
       const wb = XLSX.read(buf)
       const ws = wb.Sheets[wb.SheetNames[0]]
@@ -121,7 +119,6 @@ export default function PriceDbPage() {
         setUploading(false); return
       }
 
-      // 기존 DB 조회 (품목명+규격 → id 맵)
       const { data: existing } = await supabase.from('price_db').select('id, part_name, spec')
       const existMap = {}
       ;(existing || []).forEach(r => { existMap[`${r.part_name}||${r.spec || ''}`] = r.id })
@@ -137,10 +134,9 @@ export default function PriceDbPage() {
         const unit_price = Number(String(row[col.price] ?? '').replace(/,/g, ''))
         if (isNaN(unit_price) || unit_price <= 0) { skipCount++; continue }
 
-        const spec    = col.spec  >= 0 ? String(row[col.spec]  ?? '').trim() : ''
-        const unit    = col.unit  >= 0 ? String(row[col.unit]  ?? '').trim() || '개' : '개'
-        const notes   = col.notes >= 0 ? String(row[col.notes] ?? '').trim() : ''
-
+        const spec  = col.spec  >= 0 ? String(row[col.spec]  ?? '').trim() : ''
+        const unit  = col.unit  >= 0 ? String(row[col.unit]  ?? '').trim() || '개' : '개'
+        const notes = col.notes >= 0 ? String(row[col.notes] ?? '').trim() : ''
         const payload = { part_name, spec, unit_price, unit, notes, updated_at: new Date().toISOString() }
         const mapKey = `${part_name}||${spec}`
 
@@ -153,14 +149,11 @@ export default function PriceDbPage() {
 
       let insertedCount = 0, updatedCount = 0
 
-      // 500건씩 나눠 insert
       for (let i = 0; i < toInsert.length; i += 500) {
-        const chunk = toInsert.slice(i, i + 500)
-        const { error } = await supabase.from('price_db').insert(chunk)
-        if (!error) insertedCount += chunk.length
+        const { error } = await supabase.from('price_db').insert(toInsert.slice(i, i + 500))
+        if (!error) insertedCount += Math.min(500, toInsert.length - i)
       }
 
-      // update (병렬)
       const updateResults = await Promise.all(
         toUpdate.map(({ id, ...payload }) =>
           supabase.from('price_db').update(payload).eq('id', id)
@@ -188,20 +181,19 @@ export default function PriceDbPage() {
           <h1 className="text-lg font-semibold text-gray-900">단가 DB</h1>
           <p className="text-sm text-gray-400 mt-0.5">부품·자재의 기준 단가를 관리합니다.</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2">
           <button onClick={handleDownload}
-            className="flex items-center gap-1.5 px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors font-medium">
+            className="flex items-center gap-1.5 px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 font-medium">
             ⬇ Excel 다운로드
           </button>
           <button onClick={() => fileRef.current?.click()} disabled={uploading}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50">
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
             ⬆ {uploading ? '업로드 중...' : 'Excel 업로드'}
           </button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
         </div>
       </div>
 
-      {/* 업로드 결과 */}
       {uploadResult && (
         <div className={`mb-4 px-4 py-3 rounded-lg text-sm flex items-center justify-between ${
           uploadResult.type === 'success'
@@ -213,11 +205,10 @@ export default function PriceDbPage() {
         </div>
       )}
 
-      {/* 안내 박스 */}
       <div className="mb-5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-600 leading-relaxed">
         <strong className="text-blue-700">Excel 업로드 방법:</strong>&nbsp;
-        ① Excel 다운로드 → ② 엑셀에서 단가 수정/추가 → ③ Excel 업로드&nbsp;&nbsp;
-        <span className="text-blue-400">| 품목명+규격 동일 → 단가 업데이트 / 새 항목 → 자동 추가</span>
+        ① Excel 다운로드 → ② 엑셀에서 단가 수정/추가 → ③ Excel 업로드&nbsp;
+        <span className="text-blue-400">| 품목명+규격 동일 → 업데이트 / 새 항목 → 자동 추가</span>
       </div>
 
       {/* 개별 입력 */}
