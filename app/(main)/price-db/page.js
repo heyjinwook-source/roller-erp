@@ -128,7 +128,7 @@ export default function PriceDbPage() {
   async function handleSave() {
     if (!form.part_name || !form.unit_price) return alert('품목명과 단가는 필수입니다.')
     setSaving(true)
-    const payload = { ...form, unit_price: Number(form.unit_price), updated_at: new Date().toISOString() }
+    const payload = { ...form, unit_price: parseFloat(form.unit_price), updated_at: new Date().toISOString() }
     if (editId) {
       await supabase.from('price_db').update(payload).eq('id', editId)
     } else {
@@ -273,7 +273,7 @@ export default function PriceDbPage() {
           </div>
           <div>
             <label className="text-xs text-gray-500 mb-1 block">단가 (원) *</label>
-            <input type="number" value={form.unit_price} onChange={e => setForm({ ...form, unit_price: e.target.value })}
+            <input type="number" step="any" value={form.unit_price} onChange={e => setForm({ ...form, unit_price: e.target.value })}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400 text-right" placeholder="0" />
           </div>
           <div>
@@ -373,7 +373,7 @@ export default function PriceDbPage() {
                 <tr key={item.id} className="border-t border-gray-50 hover:bg-gray-50">
                   <td className="px-5 py-2.5 font-medium text-gray-800">{item.part_name}</td>
                   <td className="px-4 py-2.5 text-gray-500 text-xs">{item.spec}</td>
-                  <td className="px-4 py-2.5 text-right font-mono">{Number(item.unit_price).toLocaleString()}</td>
+                  <td className="px-4 py-2.5 text-right font-mono">{Number(item.unit_price).toLocaleString('ko-KR', { maximumFractionDigits: 4 })}</td>
                   <td className="px-4 py-2.5 text-center">
                     <button onClick={() => handleEdit(item)} className="text-xs text-blue-600 hover:underline mr-3">수정</button>
                     <button onClick={() => handleDelete(item.id)} className="text-xs text-red-500 hover:underline">삭제</button>
