@@ -414,13 +414,13 @@ export default function NewQuotePage() {
               </div>
               <span className="text-gray-300 text-lg">=</span>
               <div className="flex flex-col gap-0.5">
-                <span className="text-xs text-gray-400">개당 총원가</span>
+                <span className="text-xs text-gray-400">개당 단가</span>
                 <span className="font-semibold">{c.unitCost.toLocaleString()}원</span>
               </div>
               <span className="text-gray-400 text-sm">× {Number(item.quantity)||1}개</span>
               <span className="text-gray-300 text-lg">=</span>
               <div className="flex flex-col gap-0.5">
-                <span className="text-xs text-gray-400">품목단가 (합계)</span>
+                <span className="text-xs text-gray-400">총단가액</span>
                 <span className="text-blue-700 font-bold text-base">{c.amount.toLocaleString()}원</span>
               </div>
             </div>

@@ -233,10 +233,10 @@ export default function QuoteDetailPage() {
                     <span className="text-gray-300">+</span>
                     <div className="text-gray-500">개당 인건비 <span className="font-medium text-gray-800">{c.lab.toLocaleString()}원</span></div>
                     <span className="text-gray-300">=</span>
-                    <div className="text-gray-500">개당 총원가 <span className="font-semibold text-gray-900">{c.unitCost.toLocaleString()}원</span></div>
+                    <div className="text-gray-500">개당 단가 <span className="font-semibold text-gray-900">{c.unitCost.toLocaleString()}원</span></div>
                     <span className="text-gray-400 text-sm">× {Number(item.quantity)}개</span>
                     <span className="text-gray-300">=</span>
-                    <div className="text-blue-700 font-bold">품목단가 {c.amount.toLocaleString()}원</div>
+                    <div className="text-blue-700 font-bold">총단가액 {c.amount.toLocaleString()}원</div>
                   </div>
                 </div>
               </div>
