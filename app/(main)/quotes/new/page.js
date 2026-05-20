@@ -7,10 +7,11 @@ const PRODUCT_TYPES = ['B/R로라','M/R로라','헤드드럼','2열체인로라'
 
 function calcItem(item) {
   const mat = (item.parts||[]).reduce((s,p) => s+(Number(p.qty)||0)*(Number(p.unit_price)||0), 0)
-  const lab = Number(item.labor_cost)||0
-  const tot = mat+lab
+  const lab = Number(item.labor_cost)||0   // 개당 인건비
+  const unitCost = mat + lab               // 개당 총원가
   const qty = Number(item.quantity)||1
-  return { mat, lab, tot, unitPrice: Math.round(tot/qty), amount: tot }
+  const amount = unitCost * qty            // 품목단가 (수량 × 개당총원가)
+  return { mat, lab, unitCost, amount }
 }
 
 let _itemId=1, _partId=1
@@ -229,7 +230,9 @@ export default function NewQuotePage() {
         quote_id:quote.id, product_type:item.product_type, spec:item.spec,
         quantity:Number(item.quantity)||1, labor_cost:Number(item.labor_cost)||0,
         parts:item.parts.map(p=>({ part_name:p.part_name, spec:p.spec, qty:Number(p.qty)||0, unit_price:Number(p.unit_price)||0, source:p.source })),
-        unit_price:c.unitPrice, total_price:c.amount, sort_order:i,
+        unit_price:c.unitCost,    // 개당 총원가
+        total_price:c.amount,     // 품목단가 (수량×개당총원가)
+        sort_order:i,
       }
     })
     await supabase.from('quote_items').insert(quoteItems)
@@ -395,13 +398,13 @@ export default function NewQuotePage() {
             {/* 계산 푸터 */}
             <div className="flex items-center gap-4 px-5 py-3 bg-gray-50 border-t border-gray-100 flex-wrap text-sm">
               <div className="flex flex-col gap-0.5">
-                <span className="text-xs text-gray-400">재료비 합계</span>
+                <span className="text-xs text-gray-400">기본원가 (재료비)</span>
                 <span className="font-medium">{c.mat.toLocaleString()}원</span>
               </div>
               <span className="text-gray-300 text-lg">+</span>
               <div className="flex items-center gap-2">
                 <div className="flex flex-col gap-0.5">
-                  <span className="text-xs text-gray-400">인건비</span>
+                  <span className="text-xs text-gray-400">개당 인건비</span>
                   <div className="flex items-center gap-1">
                     <input type="number" value={item.labor_cost} onChange={e=>updateItem(item._id,'labor_cost',e.target.value)}
                       className="border border-gray-200 rounded-md px-2 py-1 text-sm w-28 text-right focus:outline-none focus:border-gray-400" placeholder="0" />
@@ -411,14 +414,14 @@ export default function NewQuotePage() {
               </div>
               <span className="text-gray-300 text-lg">=</span>
               <div className="flex flex-col gap-0.5">
-                <span className="text-xs text-gray-400">총원가</span>
-                <span className="font-semibold">{c.tot.toLocaleString()}원</span>
+                <span className="text-xs text-gray-400">개당 총원가</span>
+                <span className="font-semibold">{c.unitCost.toLocaleString()}원</span>
               </div>
-              <span className="text-gray-400 text-sm">÷ {Number(item.quantity)||1}개</span>
+              <span className="text-gray-400 text-sm">× {Number(item.quantity)||1}개</span>
               <span className="text-gray-300 text-lg">=</span>
               <div className="flex flex-col gap-0.5">
-                <span className="text-xs text-gray-400">품목 단가</span>
-                <span className="text-blue-700 font-bold text-base">{c.unitPrice.toLocaleString()}원</span>
+                <span className="text-xs text-gray-400">품목단가 (합계)</span>
+                <span className="text-blue-700 font-bold text-base">{c.amount.toLocaleString()}원</span>
               </div>
             </div>
           </div>
