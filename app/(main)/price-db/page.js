@@ -155,8 +155,8 @@ export default function PriceDbPage() {
       if (data.length < 1000) break
       from += 1000
     }
-    const header = ['품목명', '규격', '단가(원)', '단위', '비고']
-    const rows = all.map(i => [i.part_name, i.spec || '', i.unit_price, i.unit || '개', i.notes || ''])
+    const header = ['품목명', '규격', '단가(원)', '단위', '기준일', '비고']
+    const rows = all.map(i => [i.part_name, i.spec || '', i.unit_price, i.unit || '개', i.base_date || i.notes || '', ''])
     const csv = [header, ...rows]
       .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
       .join('\n')
@@ -193,6 +193,7 @@ export default function PriceDbPage() {
         price: header.findIndex(h => h.includes('단가')),
         unit:  header.findIndex(h => h.includes('단위')),
         notes: header.findIndex(h => h.includes('비고')),
+        date:  header.findIndex(h => h.includes('기준일') || h.includes('날짜') || h.includes('일자')),
       }
       if (col.name < 0 || col.price < 0) { setUploadResult({ type: 'error', msg: '"품목명"과 "단가" 컬럼이 필요합니다.' }); setUploading(false); return }
       const { data: existing } = await supabase.from('price_db').select('id, part_name, spec')
@@ -205,10 +206,11 @@ export default function PriceDbPage() {
         if (!part_name) { skipCount++; continue }
         const unit_price = Number((row[col.price] || '').replace(/[",]/g, '').trim())
         if (isNaN(unit_price) || unit_price <= 0) { skipCount++; continue }
-        const spec  = col.spec  >= 0 ? (row[col.spec]  || '').replace(/"/g, '').trim() : ''
-        const unit  = col.unit  >= 0 ? (row[col.unit]  || '').replace(/"/g, '').trim() || '개' : '개'
-        const notes = col.notes >= 0 ? (row[col.notes] || '').replace(/"/g, '').trim() : ''
-        const payload = { part_name, spec, unit_price, unit, notes, updated_at: new Date().toISOString() }
+        const spec      = col.spec  >= 0 ? (row[col.spec]  || '').replace(/"/g, '').trim() : ''
+        const unit      = col.unit  >= 0 ? (row[col.unit]  || '').replace(/"/g, '').trim() || '개' : '개'
+        const notes     = col.notes >= 0 ? (row[col.notes] || '').replace(/"/g, '').trim() : ''
+        const base_date = col.date  >= 0 ? (row[col.date]  || '').replace(/"/g, '').trim() : ''
+        const payload = { part_name, spec, unit_price, unit, notes, base_date, updated_at: new Date().toISOString() }
         const mapKey = `${part_name}||${spec}`
         if (existMap[mapKey]) toUpdate.push({ id: existMap[mapKey], ...payload })
         else toInsert.push(payload)
@@ -363,24 +365,26 @@ export default function PriceDbPage() {
                 <th className="px-5 py-2.5 text-left font-medium">품목명</th>
                 <th className="px-4 py-2.5 text-left font-medium">규격</th>
                 <th className="px-4 py-2.5 text-right font-medium">단가 (원)</th>
+                <th className="px-4 py-2.5 text-center font-medium">기준일</th>
                 <th className="px-4 py-2.5 text-center font-medium">관리</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={4} className="py-10 text-center text-gray-300">로딩 중...</td></tr>
+                <tr><td colSpan={5} className="py-10 text-center text-gray-300">로딩 중...</td></tr>
               ) : items.length ? items.map(item => (
                 <tr key={item.id} className="border-t border-gray-50 hover:bg-gray-50">
                   <td className="px-5 py-2.5 font-medium text-gray-800">{item.part_name}</td>
                   <td className="px-4 py-2.5 text-gray-500 text-xs">{item.spec}</td>
                   <td className="px-4 py-2.5 text-right font-mono">{Number(item.unit_price).toLocaleString('ko-KR', { maximumFractionDigits: 4 })}</td>
+                  <td className="px-4 py-2.5 text-center text-xs text-gray-400">{item.base_date || item.notes || '—'}</td>
                   <td className="px-4 py-2.5 text-center">
                     <button onClick={() => handleEdit(item)} className="text-xs text-blue-600 hover:underline mr-3">수정</button>
                     <button onClick={() => handleDelete(item.id)} className="text-xs text-red-500 hover:underline">삭제</button>
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan={4} className="py-10 text-center text-gray-300">검색 결과가 없습니다</td></tr>
+                <tr><td colSpan={5} className="py-10 text-center text-gray-300">검색 결과가 없습니다</td></tr>
               )}
             </tbody>
           </table>
