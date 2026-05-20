@@ -15,9 +15,10 @@ function calcItem(item) {
   const parts = Array.isArray(item.parts) ? item.parts : []
   const mat = parts.reduce((s, p) => s + (Number(p.qty)||0) * (Number(p.unit_price)||0), 0)
   const lab = Number(item.labor_cost) || 0
-  const tot = mat + lab
+  const unitCost = mat + lab              // 개당 총원가
   const qty = Number(item.quantity) || 1
-  return { mat, lab, tot, unitPrice: tot / qty, amount: tot }
+  const amount = unitCost * qty           // 품목단가 (수량 × 개당총원가)
+  return { mat, lab, unitCost, amount }
 }
 
 export default function QuoteDetailPage() {
@@ -228,14 +229,14 @@ export default function QuoteDetailPage() {
                     <p className="text-sm text-gray-300 mb-4">부품 내역 없음</p>
                   )}
                   <div className="flex items-center gap-4 pt-3 border-t border-gray-100 text-sm flex-wrap">
-                    <div className="text-gray-500">재료비 <span className="font-medium text-gray-800">{c.mat.toLocaleString()}원</span></div>
+                    <div className="text-gray-500">기본원가 <span className="font-medium text-gray-800">{c.mat.toLocaleString()}원</span></div>
                     <span className="text-gray-300">+</span>
-                    <div className="text-gray-500">인건비 <span className="font-medium text-gray-800">{c.lab.toLocaleString()}원</span></div>
+                    <div className="text-gray-500">개당 인건비 <span className="font-medium text-gray-800">{c.lab.toLocaleString()}원</span></div>
                     <span className="text-gray-300">=</span>
-                    <div className="text-gray-500">총원가 <span className="font-semibold text-gray-900">{c.tot.toLocaleString()}원</span></div>
-                    <span className="text-gray-300">÷ {Number(item.quantity)}개</span>
+                    <div className="text-gray-500">개당 총원가 <span className="font-semibold text-gray-900">{c.unitCost.toLocaleString()}원</span></div>
+                    <span className="text-gray-400 text-sm">× {Number(item.quantity)}개</span>
                     <span className="text-gray-300">=</span>
-                    <div className="text-blue-700 font-bold">품목단가 {Math.round(c.unitPrice).toLocaleString()}원</div>
+                    <div className="text-blue-700 font-bold">품목단가 {c.amount.toLocaleString()}원</div>
                   </div>
                 </div>
               </div>
@@ -288,7 +289,7 @@ export default function QuoteDetailPage() {
                       <td className="py-2.5 font-medium text-gray-900">{item.product_type}</td>
                       <td className="py-2.5 text-gray-500 text-xs">{item.spec}</td>
                       <td className="py-2.5 text-right">{Number(item.quantity).toLocaleString()}</td>
-                      <td className="py-2.5 text-right font-mono">{Math.round(c.unitPrice).toLocaleString()}</td>
+                      <td className="py-2.5 text-right font-mono">{Math.round(c.unitCost).toLocaleString()}</td>
                       <td className="py-2.5 text-right font-mono font-medium">{Math.round(c.amount).toLocaleString()}</td>
                     </tr>
                   )
