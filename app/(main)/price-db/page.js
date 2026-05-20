@@ -13,7 +13,7 @@ export default function PriceDbPage() {
   const [searchName, setSearchName] = useState('')
   const [searchSpec, setSearchSpec] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
-  const [form, setForm] = useState({ part_name: '', spec: '', unit_price: '', unit: '개', notes: '' })
+  const [form, setForm] = useState({ part_name: '', spec: '', unit_price: '', unit: '개', base_date: '', notes: '' })
   const [editId, setEditId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -115,12 +115,12 @@ export default function PriceDbPage() {
 
   // ── CRUD ──────────────────────────────────────────
   function resetForm() {
-    setForm({ part_name: '', spec: '', unit_price: '', unit: '개', notes: '' })
+    setForm({ part_name: '', spec: '', unit_price: '', unit: '개', base_date: '', notes: '' })
     setEditId(null)
   }
 
   function handleEdit(item) {
-    setForm({ part_name: item.part_name, spec: item.spec || '', unit_price: item.unit_price, unit: item.unit || '개', notes: item.notes || '' })
+    setForm({ part_name: item.part_name, spec: item.spec || '', unit_price: item.unit_price, unit: item.unit || '개', base_date: item.base_date || '', notes: item.notes || '' })
     setEditId(item.id)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -262,7 +262,7 @@ export default function PriceDbPage() {
       {/* 개별 등록 */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
         <h2 className="text-sm font-semibold text-gray-700 mb-3">{editId ? '단가 수정' : '개별 등록'}</h2>
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-6 gap-3">
           <div>
             <label className="text-xs text-gray-500 mb-1 block">품목명 *</label>
             <input value={form.part_name} onChange={e => setForm({ ...form, part_name: e.target.value })}
@@ -277,6 +277,11 @@ export default function PriceDbPage() {
             <label className="text-xs text-gray-500 mb-1 block">단가 (원) *</label>
             <input type="number" step="any" value={form.unit_price} onChange={e => setForm({ ...form, unit_price: e.target.value })}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400 text-right" placeholder="0" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">기준일</label>
+            <input type="date" value={form.base_date} onChange={e => setForm({ ...form, base_date: e.target.value })}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400" />
           </div>
           <div>
             <label className="text-xs text-gray-500 mb-1 block">단위</label>
