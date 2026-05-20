@@ -138,11 +138,9 @@ export default function NewQuotePage() {
   }, [])
 
   function lookupPrice(partName, spec) {
-    if (!partName) return null
+    if (!partName || !spec) return null  // 부품명+규격 둘 다 있어야 단가 조회
     const exact = priceDb.find(d => d.part_name?.trim()===partName?.trim() && d.spec?.trim()===spec?.trim())
     if (exact) return { price: Number(exact.unit_price), source:'db' }
-    const partial = priceDb.find(d => d.part_name?.trim()===partName?.trim())
-    if (partial) return { price: Number(partial.unit_price), source:'db' }
     return null
   }
 
@@ -189,11 +187,10 @@ export default function NewQuotePage() {
         const updated = {...p, [field]:val}
         if (field==='unit_price') updated.source = val?'manual':'none'
         if (field==='part_name') {
-          // 부품명 변경 시 spec 초기화 후 단가 조회
+          // 부품명 변경 시 규격·단가 초기화 (규격 선택 후 단가 조회)
           updated.spec = ''
-          const res = lookupPrice(val, '')
-          if (res) { updated.unit_price=res.price; updated.source='db' }
-          else { updated.unit_price=''; updated.source='none' }
+          updated.unit_price = ''
+          updated.source = 'none'
         }
         if (field==='spec') {
           const res = lookupPrice(p.part_name, val)
