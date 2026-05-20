@@ -10,6 +10,7 @@ const NAV = [
   { href: '/price-db',  label: '단가 DB',    icon: '≡' },
   { href: '/quotes',    label: '견적 관리',   icon: '◻' },
   { href: '/orders',    label: '수주현황',    icon: '◈' },
+  { href: '/settings',  label: '설정',        icon: '⚙' },
 ]
 
 const ROLE_LABEL = { admin: '관리자', db_manager: '단가 담당', sales: '견적 담당' }

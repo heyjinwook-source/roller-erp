@@ -89,6 +89,7 @@ export default function NewQuotePage() {
   const [clients, setClients] = useState([])
   const [priceDb, setPriceDb] = useState([])
   const [bomTemplates, setBomTemplates] = useState([])
+  const [productTypes, setProductTypes] = useState([])
 
   const [clientId, setClientId] = useState('')
   const [quoteDate, setQuoteDate] = useState(new Date().toISOString().slice(0,10))
@@ -134,6 +135,9 @@ export default function NewQuotePage() {
 
       const { data: b } = await supabase.from('bom_templates').select('*').order('product_type,sort_order')
       setBomTemplates(b||[])
+
+      const { data: pt } = await supabase.from('product_types').select('name').order('sort_order')
+      setProductTypes((pt||[]).map(p=>p.name))
     }
     load()
   }, [])
@@ -307,7 +311,7 @@ export default function NewQuotePage() {
                 <select value={item.product_type} onChange={e=>updateItem(item._id,'product_type',e.target.value)}
                   className="border border-gray-200 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-gray-400 bg-white">
                   <option value="">선택</option>
-                  {PRODUCT_TYPES.map(t=><option key={t}>{t}</option>)}
+                  {productTypes.map(t=><option key={t}>{t}</option>)}
                 </select>
               </div>
               <div className="flex items-center gap-1.5 flex-1 min-w-0">
