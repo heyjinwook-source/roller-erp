@@ -14,7 +14,45 @@ function calcItem(item) {
   return { mat, lab, unitCost, amount }
 }
 
-let _itemId=1, _partId=1
+// ── 파이프·환봉 소요수량 자동계산 ──────────────────────
+// 규격 형식: 파이프경(환봉경)*파이프치수*환봉치수
+// 예: 50.8(12)*500*530 → 파이프치수=500, 환봉치수=530
+function parseSpec(spec) {
+  if (!spec) return null
+  const parts = spec.split('*')
+  if (parts.length < 3) return null
+  const pipeDim = parseFloat(parts[1])
+  const barDim  = parseFloat(parts[2])
+  if (isNaN(pipeDim) || isNaN(barDim)) return null
+  return { pipeDim, barDim }
+}
+
+// ROUNDDOWN(6000/(치수+10)) 후 CEILING(6000/절단수, 5) × 수량
+function calcQty(dimension, count) {
+  if (!dimension || !count || dimension <= 0) return 0
+  const cutCount   = Math.floor(6000 / (dimension + 10))
+  if (cutCount <= 0) return 0
+  const mmPerPiece = Math.ceil((6000 / cutCount) / 5) * 5
+  return count * mmPerPiece
+}
+
+function applyPipeCalc(item) {
+  const specData = parseSpec(item.spec)
+  const qty = Number(item.quantity) || 1
+  if (!specData) return item
+  return {
+    ...item,
+    parts: item.parts.map(p => {
+      if (p.part_name === '파이프' || p.part_name?.includes('파이프')) {
+        return { ...p, qty: calcQty(specData.pipeDim, qty) }
+      }
+      if (p.part_name === '환봉' || p.part_name?.includes('환봉')) {
+        return { ...p, qty: calcQty(specData.barDim, qty) }
+      }
+      return p
+    })
+  }
+}
 
 // ── 공통 검색 드롭다운 컴포넌트 ──────────────────────
 function SearchDropdown({ value, onChange, options, placeholder, width = 'w-44' }) {
@@ -157,7 +195,7 @@ export default function NewQuotePage() {
   const updateItem = (id, field, val) => {
     setItems(prev => prev.map(item => {
       if (item._id!==id) return item
-      const updated = {...item, [field]:val}
+      let updated = {...item, [field]:val}
       if (field==='product_type' && val) {
         const templates = bomTemplates.filter(b=>b.product_type===val)
         if (templates.length) {
@@ -166,6 +204,10 @@ export default function NewQuotePage() {
             return { _id:_partId++, part_name:t.part_name, spec:t.part_spec||'', qty:'', unit_price:res?.price||'', source:res?.source||'none' }
           })
         }
+      }
+      // 규격 또는 수량 변경 시 파이프·환봉 소요수량 자동계산
+      if (field==='spec' || field==='quantity') {
+        updated = applyPipeCalc(updated)
       }
       return updated
     }))
@@ -319,6 +361,16 @@ export default function NewQuotePage() {
                 <input value={item.spec} onChange={e=>updateItem(item._id,'spec',e.target.value)}
                   className="border border-gray-200 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-gray-400 flex-1 min-w-0"
                   placeholder="예: 50.8(12)*500*530" />
+                {(() => {
+                  const s = parseSpec(item.spec)
+                  if (!s) return null
+                  const qty = Number(item.quantity)||1
+                  return (
+                    <span className="text-xs text-blue-500 bg-blue-50 px-2 py-1 rounded-md whitespace-nowrap shrink-0">
+                      파이프 {calcQty(s.pipeDim,qty).toLocaleString()}mm · 환봉 {calcQty(s.barDim,qty).toLocaleString()}mm
+                    </span>
+                  )
+                })()}
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-gray-400">수량</span>

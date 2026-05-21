@@ -13,6 +13,37 @@ const STATUS_COLORS = {
 }
 let _itemId = 1, _partId = 1
 
+function parseSpec(spec) {
+  if (!spec) return null
+  const parts = spec.split('*')
+  if (parts.length < 3) return null
+  const pipeDim = parseFloat(parts[1])
+  const barDim  = parseFloat(parts[2])
+  if (isNaN(pipeDim) || isNaN(barDim)) return null
+  return { pipeDim, barDim }
+}
+function calcQty(dimension, count) {
+  if (!dimension || !count || dimension <= 0) return 0
+  const cutCount = Math.floor(6000 / (dimension + 10))
+  if (cutCount <= 0) return 0
+  return count * Math.ceil((6000 / cutCount) / 5) * 5
+}
+function applyPipeCalc(item) {
+  const s = parseSpec(item.spec)
+  const qty = Number(item.quantity) || 1
+  if (!s) return item
+  return {
+    ...item,
+    parts: item.parts.map(p => {
+      if (p.part_name === '파이프' || p.part_name?.includes('파이프'))
+        return { ...p, qty: calcQty(s.pipeDim, qty) }
+      if (p.part_name === '환봉' || p.part_name?.includes('환봉'))
+        return { ...p, qty: calcQty(s.barDim, qty) }
+      return p
+    })
+  }
+}
+
 function calcItem(item) {
   const parts = Array.isArray(item.parts) ? item.parts : []
   const mat = parts.reduce((s,p) => s+(Number(p.qty)||0)*(Number(p.unit_price)||0), 0)
@@ -164,7 +195,14 @@ export default function QuotesPage() {
   // 품목 CRUD
   function addEditItem(){setEditItems(prev=>[...prev,{_id:_itemId++,product_type:'',spec:'',quantity:1,labor_cost:0,parts:[]}])}
   function removeEditItem(id){setEditItems(prev=>prev.filter(i=>i._id!==id))}
-  function updateEditItem(id,field,val){setEditItems(prev=>prev.map(i=>i._id===id?{...i,[field]:val}:i))}
+  function updateEditItem(id,field,val){
+    setEditItems(prev=>prev.map(i=>{
+      if(i._id!==id) return i
+      let updated = {...i,[field]:val}
+      if(field==='spec'||field==='quantity') updated = applyPipeCalc(updated)
+      return updated
+    }))
+  }
 
   // 부품 CRUD
   function addEditPart(itemId){setEditItems(prev=>prev.map(i=>i._id===itemId?{...i,parts:[...i.parts,{_id:_partId++,part_name:'',spec:'',qty:'',unit_price:'',source:'none'}]}:i))}
@@ -269,6 +307,16 @@ export default function QuotesPage() {
                     <span className="text-xs text-gray-400 shrink-0">규격</span>
                     <input value={item.spec} onChange={e=>updateEditItem(item._id,'spec',e.target.value)}
                       className="border border-gray-200 rounded-md px-2 py-1 text-sm flex-1 focus:outline-none" placeholder="규격" />
+                    {(() => {
+                      const s = parseSpec(item.spec)
+                      if (!s) return null
+                      const qty = Number(item.quantity)||1
+                      return (
+                        <span className="text-xs text-blue-500 bg-blue-50 px-2 py-1 rounded whitespace-nowrap shrink-0">
+                          파이프 {calcQty(s.pipeDim,qty).toLocaleString()} · 환봉 {calcQty(s.barDim,qty).toLocaleString()}
+                        </span>
+                      )
+                    })()}
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-gray-400">수량</span>
