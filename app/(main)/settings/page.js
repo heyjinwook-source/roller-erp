@@ -21,17 +21,23 @@ export default function SettingsPage() {
 
   const supabase = createClient()
 
-  // ── 품목 목록 로드 (Supabase product_types 테이블 사용) ──
+  // ── 품목 목록 로드 ──
   async function loadProducts() {
-    const { data } = await supabase.from('product_types').select('*').order('sort_order').order('name')
-    setProducts(data || [])
+    try {
+      const { data, error } = await supabase.from('product_types').select('*').order('sort_order').order('name')
+      if (error) { console.error('product_types 로드 오류:', error.message); return }
+      setProducts(data || [])
+    } catch(e) { console.error(e) }
   }
 
   // ── BOM 로드 ──
   async function loadBoms() {
     setBomLoading(true)
-    const { data } = await supabase.from('bom_templates').select('*').order('product_type').order('sort_order')
-    setBoms(data || [])
+    try {
+      const { data, error } = await supabase.from('bom_templates').select('*').order('product_type').order('sort_order')
+      if (error) { console.error('bom_templates 로드 오류:', error.message); setBomLoading(false); return }
+      setBoms(data || [])
+    } catch(e) { console.error(e) }
     setBomLoading(false)
   }
 
